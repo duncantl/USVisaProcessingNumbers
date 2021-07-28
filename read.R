@@ -4,6 +4,23 @@ if(FALSE) {
 library(ReadPDF)
 doc = readPDFXML("JUNE 2021 - NIV Issuances by Post and Visa Class.pdf")
 p = doc[[74]]
+
+xml19 = list.files(pattern = ".*2019.*\\.xml$")
+d19 = lapply(xml19, readDoc, skip = 1:2) 
+month = gsub(" .*", "", xml19)
+d19 = mapply(function(d, month) { names(d) = c("Post", "Visa Class", "Issuances"); d$month = month; d}, d19, month, SIMPLIFY = FALSE)
+sapply(d19, colnames)
+d19 = do.call(rbind, d19)
+
+xml21 = list.files(pattern = ".*2021.*\\.xml$")
+d21 = lapply(xml21, readDoc) 
+}
+
+readYear =
+function(year, ...)    
+{
+    xml19 = list.files(pattern = ".*2019.*\\.xml$")
+    d19 = lapply(xml19, readDoc, skip = 1:2) 
 }
 
 readDoc =
@@ -20,12 +37,17 @@ pageNum = function(p) as.integer(xmlGetAttr(p, "number"))
 
 readPage =
 function(page, skip = if(pageNum(page) == 1) 1L else integer(),
-          rects = getBBox(page, TRUE), txt = getBBox2(page, TRUE))
+         removeFooter = TRUE,             
+         rects = getBBox(page, TRUE), txt = getBBox2(page, TRUE))
 {
     # Find the horizontal lines
     rects = rects[rects$nodeType == "rect",]
     is.horiz = abs(rects$y0 - rects$y1) < 3
-browser()
+
+    if(removeFooter)
+        txt = txt[ txt$top < max(rects$y1, rects$y0), ]
+
+    
     # Split the text into rows between the horizontal lines
     rows = split(txt, cut(txt$top + txt$height, c(0, unique(rects$y0[is.horiz]), Inf)))
     rows = rows[ sapply(rows, nrow) > 0]
