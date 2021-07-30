@@ -1,32 +1,61 @@
 # https://travel.state.gov/content/travel/en/legal/visa-law0/visa-statistics/nonimmigrant-visa-statistics/monthly-nonimmigrant-visa-issuances.html
 
-if(FALSE) {
+
 library(ReadPDF)
+library(XML)
+
+if(FALSE) {
 doc = readPDFXML("JUNE 2021 - NIV Issuances by Post and Visa Class.pdf")
 p = doc[[74]]
 
-xml19 = list.files(pattern = ".*2019.*\\.xml$")
-d19 = lapply(xml19, readDoc, skip = 1:2) 
-month = gsub(" .*", "", xml19)
-d19 = mapply(function(d, month) { names(d) = c("Post", "Visa Class", "Issuances"); d$month = month; d}, d19, month, SIMPLIFY = FALSE)
-sapply(d19, colnames)
-d19 = do.call(rbind, d19)
+z18 = readYear("2018", skip = 1:2)
+z19 = readYear("2019", skip = 1:2)
+z21 = readYear("2021")
 
-xml21 = list.files(pattern = ".*2021.*\\.xml$")
-d21 = lapply(xml21, readDoc) 
+z21 = readYear(xml = "JUNE 2021 - NIV Issuances by Post and Visa Class.xml")
+
+z19.F1 = subset(z19, `Visa Class` == "F1") # drop NAs from GRAND TOTAL
+z21.F1 = subset(z21, `Visa Class` == "F1") 
+
+countryMap = readRDS("cityCountryMap.rds")
+
+#z19.F1$country = countryMap[ z19.F1$Post ]
+#z21.F1$country = countryMap[ z21.F1$Post ]
+
+
+years = table(gsub("^[A-Za-z]+[-_]([0-9]+)[-_].*", "\\1", list.files("PDF", pattern = "Post.*\\.pdf$", )))
+
+zz = lapply(names(years), function(y) readYear(y, skip = if(y != "2021") 1:2 else integer()))
+
+head(z21.F1[order(z21.F1$Issuances, decreasing = TRUE), ], 50)
 }
 
 readYear =
-function(year, ...)    
+function(year, skip = 1:2, dir = "PDF", xml = list.files(dir, pattern = sprintf(".*%s.*\\.xml$", year), full.names = TRUE), ...)    
 {
-    xml19 = list.files(pattern = ".*2019.*\\.xml$")
-    d19 = lapply(xml19, readDoc, skip = 1:2) 
+    d = lapply(xml, readDoc, skip = skip, ...)
+    month = gsub("[_ ].*", "", basename(xml))
+    d = mapply(function(d, month) {
+              names(d) = c("Post", "Visa Class", "Issuances", if(length(d) > 3) "page")
+              d$month = month
+              d
+          }, d, month, SIMPLIFY = FALSE)    
+    d = do.call(rbind, d)
+    d$Issuances = as.integer(gsub(",", "", d$Issuances))
+
+    d$country = countryMap[d$Post]
+    
+    d
 }
 
 readDoc =
-function(f, ..., doc = readPDFXML(f), combine = TRUE)    
+function(f, ..., doc = readPDFXML(f), combine = TRUE, addPage = FALSE)    
 {
-    tbls = lapply(getPages(doc), readPage, ...)
+    tbls = lapply(getPages(doc), readPage, addPage = addPage, ...)
+
+    if(nrow(tbls[[length(tbls)]]) == 1 && grepl("total", tbls[[length(tbls)]][1, 1], ignore.case = TRUE))
+        tbls = tbls[ - length(tbls) ]
+    
     if(combine)
         do.call(rbind, tbls)
     else
@@ -37,7 +66,8 @@ pageNum = function(p) as.integer(xmlGetAttr(p, "number"))
 
 readPage =
 function(page, skip = if(pageNum(page) == 1) 1L else integer(),
-         removeFooter = TRUE,             
+         removeFooter = TRUE,
+         addPage = FALSE,
          rects = getBBox(page, TRUE), txt = getBBox2(page, TRUE))
 {
     # Find the horizontal lines
@@ -72,7 +102,12 @@ function(page, skip = if(pageNum(page) == 1) 1L else integer(),
         els[w] = lapply(els[w], function(x) { templ[names(x)] = x ; templ })
     }
 
-    as.data.frame(do.call(rbind, els), row.names = seq(along.with = els))
+    ans = as.data.frame(do.call(rbind, els), row.names = seq(along.with = els))
+    
+    if(addPage)
+        ans$page = as.integer(xmlGetAttr(page, "number"))
+    
+    ans
 }
 
 
