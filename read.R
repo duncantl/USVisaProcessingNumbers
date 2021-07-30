@@ -25,8 +25,12 @@ countryMap = readRDS("cityCountryMap.rds")
 
 years = table(gsub("^[A-Za-z]+[-_]([0-9]+)[-_].*", "\\1", list.files("PDF", pattern = "Post.*\\.pdf$", )))
 
-zz = lapply(names(years), function(y) readYear(y, skip = if(y != "2021") 1:2 else integer()))
+zz = lapply(names(years), function(y) if(y == "2021")readYear(y) else readYear(y, skip = 1:2))
+names(zz) = names(years)
 
+ay = do.call(rbind, zz)
+ay$year = rep(as.integer(names(zz)), sapply(zz, nrow))
+         
 head(z21.F1[order(z21.F1$Issuances, decreasing = TRUE), ], 50)
 }
 
@@ -34,7 +38,7 @@ readYear =
 function(year, skip = 1:2, dir = "PDF", xml = list.files(dir, pattern = sprintf(".*%s.*\\.xml$", year), full.names = TRUE), ...)    
 {
     d = lapply(xml, readDoc, skip = skip, ...)
-    month = gsub("[_ ].*", "", basename(xml))
+    month = gsub("[-_ ].*", "", basename(xml))
     d = mapply(function(d, month) {
               names(d) = c("Post", "Visa Class", "Issuances", if(length(d) > 3) "page")
               d$month = month
@@ -56,9 +60,14 @@ function(f, ..., doc = readPDFXML(f), combine = TRUE, addPage = FALSE)
     if(nrow(tbls[[length(tbls)]]) == 1 && grepl("total", tbls[[length(tbls)]][1, 1], ignore.case = TRUE))
         tbls = tbls[ - length(tbls) ]
     
-    if(combine)
-        do.call(rbind, tbls)
-    else
+    if(combine) {
+        ans = do.call(rbind, tbls)
+        if(ans[1, 3] == "Issuances") {
+            names(ans)[1:3] =  as.character(ans[1, 1:3])
+            ans = ans[-1,]
+        }
+        ans
+    } else
         tbls
 }
 
@@ -79,7 +88,7 @@ function(page, skip = if(pageNum(page) == 1) 1L else integer(),
 
     
     # Split the text into rows between the horizontal lines
-    rows = split(txt, cut(txt$top + txt$height, c(0, unique(rects$y0[is.horiz]), Inf)))
+    rows = split(txt, cut(txt$top + txt$height, c(0, unique(rects$y0[is.horiz]) + 0.5, Inf)))
     rows = rows[ sapply(rows, nrow) > 0]
 
     if(length(skip))
