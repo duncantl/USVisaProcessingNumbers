@@ -19,6 +19,54 @@ z21.F1 = subset(z21, `Visa Class` == "F1")
 
 countryMap = readRDS("cityCountryMap.rds")
 
+
+
+
+# Look at Germany for 2021
+monthNames = toupper(format(seq(as.Date("2021/1/1"), len = 12, by = "month"), "%B"))
+g = subset(z21, country == "Germany" & `Visa Class` == "F1")
+with(g, plot(factor(month, labels = toupper(monthNames[1:7])), Issuances))
+
+
+# Now look at Germany for three years for F1 visas summed across all Ports.
+gry = mapply(function(x, year) {
+                  g = x[x$"Visa Class" == "F1" & x$country == "Germany",]
+                  tmp = by(g$Issuances, g$month, sum)
+                  mon = factor(toupper(names(tmp)), labels = monthNames[ monthNames %in% toupper(names(tmp)) ])
+                  data.frame(count = as.integer(tmp), month = mon, year = rep(year, length(tmp)))
+
+              }, list(z18, z19, z21), c(18, 19, 21), SIMPLIFY = FALSE)
+gry = do.call(rbind, gry)
+gry$year = factor(gry$year)
+library(ggplot2)
+ggplot(gry) + geom_line(aes(x = month, y = count, group = year, color = year)) + ggtitle("F1 Visas issued in the 3 German Ports 2018, 2019, 2021 by month")
+
+
+# Same thing for J1 visas.
+gry = mapply(function(x, year) {
+                  g = x[x$"Visa Class" == "J1" & x$country == "Germany",]
+                  tmp = by(g$Issuances, g$month, sum)
+                  mon = factor(toupper(names(tmp)), labels = monthNames[ monthNames %in% toupper(names(tmp)) ])
+                  data.frame(count = as.integer(tmp), month = mon, year = rep(year, length(tmp)))
+
+              }, list(z18, z19, z21), c(18, 19, 21), SIMPLIFY = FALSE)
+gry = do.call(rbind, gry)
+gry$year = factor(gry$year)
+library(ggplot2)
+ggplot(gry) + geom_line(aes(x = month, y = count, group = year, color = year)) + ggtitle("J1 Visas issued in the 3 German Ports 2018, 2019, 2021 by month")
+
+
+
+
+
+tmp = by(g$Issuances, g$month, sum)
+plot(factor(names(tmp), labels = toupper(monthNames[1:7])), as.integer(tmp), type = "n")
+points(factor(names(tmp), labels = toupper(monthNames[1:7])), as.integer(tmp))
+
+
+library(ggplot2)
+ggplot(data.frame(count = as.integer(tmp), month = factor(names(tmp), labels = toupper(monthNames[1:7])))) + geom_line(aes(x = month, y = count))
+
 #z19.F1$country = countryMap[ z19.F1$Post ]
 #z21.F1$country = countryMap[ z21.F1$Post ]
 
@@ -32,6 +80,10 @@ ay = do.call(rbind, zz)
 ay$year = rep(as.integer(names(zz)), sapply(zz, nrow))
          
 head(z21.F1[order(z21.F1$Issuances, decreasing = TRUE), ], 50)
+
+
+
+
 }
 
 readYear =
@@ -40,17 +92,26 @@ function(year, skip = 1:2, dir = "PDF", xml = list.files(dir, pattern = sprintf(
     d = lapply(xml, readDoc, skip = skip, ...)
     month = gsub("[-_ ].*", "", basename(xml))
     d = mapply(function(d, month) {
-              names(d) = c("Post", "Visa Class", "Issuances", if(length(d) > 3) "page")
+              names(d) = mkNames(d)
               d$month = month
               d
           }, d, month, SIMPLIFY = FALSE)    
     d = do.call(rbind, d)
-    d$Issuances = as.integer(gsub(",", "", d$Issuances))
+    d$Issuances = mkIssuances(d$Issuances)
 
     d$country = countryMap[d$Post]
     
     d
 }
+
+mkIssuances =
+function(x)
+    as.integer(gsub(",", "", x))
+
+mkNames =
+function(d)    
+    c("Post", "Visa Class", "Issuances", if(length(d) > 3) "page")
+
 
 readDoc =
 function(f, ..., doc = readPDFXML(f), combine = TRUE, addPage = FALSE)    
@@ -71,7 +132,10 @@ function(f, ..., doc = readPDFXML(f), combine = TRUE, addPage = FALSE)
         tbls
 }
 
+# Is this in the ReadPDF package already?
+# This is pageOf() in ReadPDF.  It is not exported. Should be and also have a pageNum for the Page object.
 pageNum = function(p) as.integer(xmlGetAttr(p, "number"))
+pageNum = function(p) ReadPDF:::pageOf(p) 
 
 readPage =
 function(page, skip = if(pageNum(page) == 1) 1L else integer(),
@@ -102,6 +166,7 @@ function(page, skip = if(pageNum(page) == 1) 1L else integer(),
     nels = sapply(els, length)
 
     # Check if we have the same number of elements in each row.
+    # If not, fill in the missing cells based on the cut intervals.
     if(length(unique(nels)) > 1) {
         # Fix with NAs
         i = which.max(nels)
@@ -114,7 +179,7 @@ function(page, skip = if(pageNum(page) == 1) 1L else integer(),
     ans = as.data.frame(do.call(rbind, els), row.names = seq(along.with = els))
     
     if(addPage)
-        ans$page = as.integer(xmlGetAttr(page, "number"))
+        ans$page = pageNum(page)
     
     ans
 }
